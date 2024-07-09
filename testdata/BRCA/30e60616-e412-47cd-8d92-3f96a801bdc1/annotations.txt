@@ -1,0 +1,2 @@
+id	submitter_id	entity_type	entity_id	category	classification	created_datetime	status	notes
+594a618c-addc-4e82-9074-7773848261c4	\N	aggregated_somatic_mutation	30e60616-e412-47cd-8d92-3f96a801bdc1	General	Notification	2022-02-28T15:33:43.381629-06:00	Approved	Variants from SomaticSniper are not included.

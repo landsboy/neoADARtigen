@@ -10,7 +10,7 @@ k="$3"
 start_seq=$((mut_position-15))
 end_seq=$((mut_position+15))
 # path to create temp file of BED format for query
-out_temp="/home/alu/netlandes/MHCpan/temp_folder/TEMP${k}.bed"
+out_temp="sup/TEMP/TEMP${k}.bed"
 # create the temp file with the BED entry  $genome
 printf "%s\t%s\t%s\n" "$chr" "$start_seq" "$end_seq" > "$out_temp"
 bedtools intersect -wa -a "$genome" -b "$out_temp" 

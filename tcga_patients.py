@@ -1,4 +1,3 @@
-import argparse
 import subprocess
 import pandas as pd
 import re
@@ -9,16 +8,19 @@ from itertools import combinations
 import csv
 
 # Global variables:
-k=5
+PROJECT_PATH = "testdata"
+RESULTS_PATH = "results"
+TEMP_PATH =  "sup"
+EDITS_LIST = [0,1,2]
+MER_LENGHT = 9
+NUM_OF_NUC_AROUND_MUT = 20
+SIZE_OF_SEQ = 2*NUM_OF_NUC_AROUND_MUT + 2*26 + 1
 
-num_of_nuc_around_mut = 20
-mutation_size = 6
-size_of_seq = 2*num_of_nuc_around_mut + 2*26 + 1
-mer_lenght = 9
-edits_list = [0,1,2]
 
 def setting_Environment_Variables():
-    # Define the new values for the environment variables
+    """
+    This method configures the environment variables to enable the subsequent execution of netMHCpan4.1.
+    """
     os.environ["PLATFORM"] = "Linux_x86_64"
     os.environ["NMHOME"] = "/private7/projects/Netanel/netMHCpan-4.1"
     os.environ["NETMHCpan"] = os.environ["NMHOME"] + "/" + os.environ["PLATFORM"]
@@ -27,17 +29,20 @@ def setting_Environment_Variables():
     os.environ["TMPDIR"] = "/tmp"
     os.environ["DTUIBSWWW"] = "www"
 
-def delete_previouse_results(primary_site):
-    fp = f"/home/alu/netlandes/MHCpan/final_results/{primary_site}"
-    dir_list = os.listdir(fp)
-    for dir_name in dir_list:
-        dir_path = os.path.join(f"/home/alu/netlandes/MHCpan/final_results/{primary_site}/", dir_name)
-        os.system('rm -rf {}'.format(dir_path))
+def find_duplicate_patients_in_data(primary_site, project_path):
+    """
+    This method finds all patients who have multiple mutation files and manipulates them
 
-def find_duplicate_patients_in_data(primary_site):
-    all_patient = []
-    for file_id in os.listdir(f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/{primary_site}"):
-        mut_path = f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/{primary_site}/{file_id}"
+    :param primary_site: The project's name (BRCA, SKCM etc.)
+    :param project_path: Location of all project data on the computer
+
+    :return dup_pat: The list of all patients who have two or more files
+    :return new_dic: A dictionary that each patient with multiple files will have the value of a single file on which the tool will run
+    """
+
+    all_patient = {}
+    for file_id in os.listdir(project_path + f"/{primary_site}"):
+        mut_path = project_path + f"/{primary_site}/{file_id}"
         gz_file_path = None
         for file_name in os.listdir(mut_path):
             if file_name.endswith('.gz'):
@@ -50,17 +55,28 @@ def find_duplicate_patients_in_data(primary_site):
                 if line_count > 8:  # Start extracting mutations from the 7th line
                     columns = line.strip().split('\t')
                     temp_val = columns[15].split('-')[0:3]
-                    all_patient.append(('-').join(temp_val))
+                    if ('-').join(temp_val) in all_patient:
+                        all_patient[('-').join(temp_val)].append(columns[15])
+                    else:
+                        all_patient[('-').join(temp_val)] = [columns[15]]
                     break
-    # Create an empty dictionary to store the count of occurrences of each patient name
-    name_count = {}
-    # Count the occurrences of each patient name in the list
-    for name in all_patient:
-        if name in name_count:
-            name_count[name] += 1
-        else:
-            name_count[name] = 1
-    return [name for name, count in name_count.items() if count > 1]
+    new_dic = {}
+    dup_pat = [key for key, value in all_patient.items() if len(value) >= 2]
+    with open(project_path + '/UUIDtoCASE.tsv', 'r') as tsvfile:
+        reader = csv.reader(tsvfile, delimiter='\t')
+        data = [row[0] for row in reader]
+
+    for key,val in all_patient.items():
+        if key in dup_pat:
+            for v in val:
+                if v.split("-")[3][:2] == "01" and v.split("-")[4][-1] == "D" and "-".join(v.split("-")[0:4]) in data:
+                    new_dic[key] = v
+            if key not in new_dic:
+                for v in val:
+                    if v.split("-")[3][:2] == "01" and "-".join(v.split("-")[0:4]) in data:
+                        new_dic[key] = v
+
+    return dup_pat, new_dic
 
 def checking_input(mutation_input):
     # We want deletion and insertion mutations only:
@@ -75,26 +91,23 @@ def checking_input(mutation_input):
     return re.search(pattern, mutation_input)
 
 def creat_FASTA_file(list_of_seq, k):
-    with open(f"/home/alu/netlandes/MHCpan/temp_folder/input_seq{k}.fsa", "w") as fasta_file:
+    with open(os.path.join(TEMP_PATH,"TEMP", f"input_seq{k}.fsa"), "w") as fasta_file:
         for i, sequence in enumerate(list_of_seq):
             fasta_file.write(f">{i}\n{str(Seq(sequence).translate())}\n")
 
 def run_MHCpan(patient_HLA, k):
-    output = subprocess.run(f'"/private7/projects/Netanel/netMHCpan-4.1/Linux_x86_64/bin/netMHCpan" -f "/home/alu/netlandes/MHCpan/temp_folder/input_seq{k}.fsa" -a {patient_HLA} -l {mer_lenght} -BA -t 2.5', shell=True, capture_output=True, text=True)
+    output = subprocess.run(f'"/private7/projects/Netanel/netMHCpan-4.1/Linux_x86_64/bin/netMHCpan" -f {os.path.join(TEMP_PATH,"TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
     return output.stdout
 
-def create_results_file(tuples_of_SB, tuples_of_WB, output):
+def create_results_file(tuples_of_SB_WB, output):
     # If we didn't get any result:
     if not output:
         return
     output_list = output.split("\n")
     for result in output_list:
-        if result[-2:] == "WB" and result[0] != "#":
+        if (result[-2:] == "WB" or result[-2:] == "SB") and result[0] != "#":
             final_result = [value for value in result.split(" ") if value.strip()]
-            tuples_of_WB.append((int(final_result[10]), final_result[2], final_result[12], final_result[1].replace('*', ''), final_result[15]))
-        if result[-2:] == "SB" and result[0] != "#":
-            final_result = [value for value in result.split(" ") if value.strip()]
-            tuples_of_SB.append((int(final_result[10]), final_result[2], final_result[12], final_result[1].replace('*', ''), final_result[15]))
+            tuples_of_SB_WB.append((int(final_result[10]), final_result[2], final_result[12], final_result[1].replace('*', ''), final_result[15], final_result[14]))
 
 def creats_list_of_mutation(mut_path):
     gz_file_path = None
@@ -114,6 +127,8 @@ def creats_list_of_mutation(mut_path):
                 if columns[4] == "chrM":
                     continue
                 HGVSp_Short = columns[36].split('.')[-1]
+                if "=" in HGVSp_Short:
+                    continue
                 if "*" in HGVSp_Short: # Mutations that cause FS within our editing framework - will be removed
                     if "fs" in HGVSp_Short:
                         num_AA = HGVSp_Short.split("*")[-1]
@@ -145,7 +160,7 @@ def find_HLA(patient_id, df):
                 HLA_list.append(converted_hla)
     return HLA_list
 
-def preprocessing(mutation):
+def preprocessing(mutation, k):
     mutation_input = mutation[0]
     match = checking_input(mutation_input)
     pos_list = []
@@ -159,16 +174,12 @@ def preprocessing(mutation):
         mut_type = match.group(3)
     mut_seq = match.group(4)
 
-    # # We want the size of the insertion to be no more than 6bp:
-    # if not (len(mut_seq) > mutation_size):
-    #     return
-
     # Run a program that accepts as input a chromosome and location and returns the bases around it:
-    p = subprocess.run(f'sh "/home/alu/netlandes/MHCpan/find_seq_of_mutation.sh" {mut_chr} {mut_pos} {int(size_of_seq / 2)} {k}', capture_output=True,text=True, shell=True)
+    p = subprocess.run(f'sh {os.path.join("src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k}', capture_output=True,text=True, shell=True)
     seq = p.stdout.replace("\n", "") 
 
     # We will run a program that will return the reading frame of the sequence:
-    q = subprocess.run(f'sh "/home/alu/netlandes/MHCpan/find_position.sh" {mut_chr} {mut_pos} {k}', shell=True, capture_output=True,text=True)
+    q = subprocess.run(f'sh {os.path.join("src", "find_position.sh")} {mut_chr} {mut_pos} {k}', shell=True, capture_output=True,text=True)
     res_list = [res for res in q.stdout.split("\n") if res]
 
     if not res_list:
@@ -181,7 +192,7 @@ def preprocessing(mutation):
             break
 
     temp = seq[::-1]
-    frame_init_pos = int(mut_pos) - int((size_of_seq/2) - 1)
+    frame_init_pos = int(mut_pos) - int((SIZE_OF_SEQ/2) - 1)
     strand = row[4]
     reading_frame = int(row[5])
     if strand == "+":
@@ -193,16 +204,16 @@ def preprocessing(mutation):
         count = 1
         count2 = 0
         seq = temp
-        frame_init_pos = int(mut_pos) + int((size_of_seq/2) - 1)
+        frame_init_pos = int(mut_pos) + int((SIZE_OF_SEQ/2) - 1)
         cds_start_pos = int(row[2])
         cds_end_pos = int(row[1])
     end = len(seq)
     flag = True
-    if abs(int(mut_pos) - cds_start_pos) < int((size_of_seq/2) - 1): 
-        start = int((size_of_seq/2) - 1) - abs(int(mut_pos) - cds_start_pos) + reading_frame + count
+    if abs(int(mut_pos) - cds_start_pos) < int((SIZE_OF_SEQ/2) - 1): 
+        start = int((SIZE_OF_SEQ/2) - 1) - abs(int(mut_pos) - cds_start_pos) + reading_frame + count
         frame_init_pos = cds_start_pos + reading_frame 
         flag = False
-    if abs(cds_end_pos - int(mut_pos)) < int(size_of_seq/2):
+    if abs(cds_end_pos - int(mut_pos)) < int(SIZE_OF_SEQ/2):
         end = abs(cds_end_pos - frame_init_pos) 
         if not flag:
             end += start
@@ -225,7 +236,7 @@ def preprocessing(mutation):
 
     # Creats mutatation in the seq for each isoform:
     mut_isoforms = []
-    pos = int(size_of_seq/2) - start - count2 + count
+    pos = int(SIZE_OF_SEQ/2) - start - count2 + count
     if strand == "-":
         if mut_type == "ins":
             mut_seq = mut_seq[::-1]
@@ -236,8 +247,9 @@ def preprocessing(mutation):
     if mut_type == "del":
         # Remove the sequence from the DNA sequence:
         mut_dna_seq = dna_seq[:pos] + dna_seq[pos + len(mut_seq):]
+        pos_list.append(pos)
     elif mut_type == "ins":
-        pos = int(size_of_seq/2) - start 
+        pos = int(SIZE_OF_SEQ/2) - start 
         # Insert the sequence to the DNA sequence:
         mut_dna_seq = dna_seq[:pos] + mut_seq + dna_seq[pos:]
         for i in range(len(mut_seq)):
@@ -247,7 +259,7 @@ def preprocessing(mutation):
         pos_list.append(pos)
 
     # The netMHC tool accepts a peptide of at least 9mer in length
-    if len(mut_dna_seq) < mer_lenght * 3:
+    if len(mut_dna_seq) < MER_LENGHT * 3:
         return 
 
     # If the mutation is on the negative strand, we will look for editing on the negative strand:
@@ -262,8 +274,8 @@ def preprocessing(mutation):
 
     return mut_isoforms, strand, pos_list, m, pos
         
-def adding_TPM(primary_site, duplicats_patients):
-    with open(f'/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/UUIDtoCASE.tsv', 'r') as tsvfile:
+def adding_TPM(primary_site, duplicats_patients, project_path):
+    with open(project_path + '/UUIDtoCASE.tsv', 'r') as tsvfile:
         reader = csv.reader(tsvfile, delimiter='\t')
         data = [(row[1], row[2], row[0]) for row in reader]
 
@@ -282,7 +294,7 @@ def adding_TPM(primary_site, duplicats_patients):
             temp = filename.split(".")[0]
         for item in data:
             if (patient_id not in duplicats_patients and item[0] == patient_id) or (temp in duplicats_patients and item[2] == patient_id):
-                folder_path = f'/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/TPM/{item[1]}/'
+                folder_path = project_path + f"/TPM/{item[1]}/"
                 if not os.path.exists(folder_path):
                     break
                 files_in_folder = os.listdir(folder_path)
@@ -312,6 +324,9 @@ def adding_TPM(primary_site, duplicats_patients):
                 break
 
 def edit_option_initialization(edit_option):
+    """
+    This method ..
+    """
     if edit_option == 0:
         return True, False, False
     elif edit_option == 1:
@@ -319,199 +334,199 @@ def edit_option_initialization(edit_option):
     else:
         return False, False, True
 
+def parellel_function(patiens_files,project_path, primary_site, duplicats_patients, df, pat_dic):
+    for index, file_id in enumerate(patiens_files):
+        list_of_mutation, p_id, num_mutation = creats_list_of_mutation(os.path.join(project_path , primary_site, file_id))
+        t = p_id.split('-')[0:3]
+        patient_ID = '-'.join(t)
+
+        if patient_ID in duplicats_patients:
+            if patient_ID not in pat_dic or p_id != pat_dic[patient_ID]:
+                continue
+            res_path = os.path.join(RESULTS_PATH, primary_site, p_id)
+        else:
+            res_path = os.path.join(RESULTS_PATH, primary_site, patient_ID)
+
+        if len(list_of_mutation) >= 8000:
+            continue
+
+        list_HLA = find_HLA(patient_ID, df)
+        list_of_HLA = list(set(list_HLA))
+
+        # If no HLA is found for the current patient, it is skipped:
+        if not list_of_HLA:
+            continue
+
+        with open (res_path, 'w') as final_file:
+            final_file.write("#NEO-ADAR-TIGEN 1.0\n")
+            final_file.write(f"#Patient ID: {patient_ID}\n")
+            final_file.write(f"#File ID: {file_id}\n")
+            final_file.write(f"#Num of mutation: {num_mutation}\n")
+            final_file.write(f"#Num of mutation in CDS: {len(list_of_mutation)}\n")
+            final_file.write("Gene_Name\tTranscript_ID\tMutation\tStrand\tHGVSp_Short\tBest-target\tGuide-RNA\tRank(%)\tAffinity(nM)\tRank_BA(%)\tHLA\tEDITS\n")
+
+            for mutation in list_of_mutation:
+                fun_result = preprocessing(mutation, index)
+                if fun_result is not None:
+                    mut_isoforms, strand, pos_list, m, pos = fun_result
+                else:
+                    continue
+                for edit_option in EDITS_LIST:
+                    without_editing, single_editing, double_editing = edit_option_initialization(edit_option)
+
+                    sb_wb_tuple = []
+
+                    if without_editing:
+                        mut_start_index = pos_list[0]
+                        mut_end_index = pos_list[-1]
+                        NEW_mut_isoforms = []
+                        for mut_isoform in mut_isoforms:
+                            if ">" in mutation[0] or "del" in mutation[0]:
+                                if mut_start_index % 3 == 0:
+                                    start_index = max(mut_start_index - 24, 0)
+                                    end_index = mut_end_index + 27
+                                elif mut_start_index % 3 == 1:
+                                    start_index = max(mut_start_index - 25, 0)
+                                    end_index = mut_end_index + 26
+                                else:
+                                    start_index = max(mut_start_index - 26, 0)
+                                    end_index = mut_end_index + 25
+                            else:
+                                if mut_start_index % 3 == 0:
+                                    start_index = max(mut_start_index - 24, 0)
+                                elif mut_start_index % 3 == 1:
+                                    start_index = max(mut_start_index - 25, 0)
+                                else:
+                                    start_index = max(mut_start_index - 26, 0)
+                                if mut_end_index % 3 == 0:
+                                    end_index = mut_end_index + 27
+                                elif mut_end_index % 3 == 1:
+                                    end_index = mut_end_index + 26
+                                else:
+                                    end_index = mut_end_index + 25
+                            NEW_mut_isoforms.append("".join(mut_isoform[start_index : end_index]))
+
+                        creat_FASTA_file(NEW_mut_isoforms, index)
+                        for hla in list_of_HLA:
+                            output = run_MHCpan(hla, index)
+                            create_results_file(sb_wb_tuple, output) 
+                        sequence_list = list(mut_isoforms[0]) 
+                        gRNA = "".join(sequence_list[max(pos - NUM_OF_NUC_AROUND_MUT, 0) : min(pos + NUM_OF_NUC_AROUND_MUT + m, len(sequence_list))])
+                    
+                    if single_editing or double_editing:
+                        # Creating the edit in the mutant sequence:
+                        ADAR_mut_seq_list = []
+
+                        if single_editing:
+                            for isoform in mut_isoforms:
+                                for i in range(max(pos - NUM_OF_NUC_AROUND_MUT + 1, 1), min(pos + NUM_OF_NUC_AROUND_MUT + m - 1, len(isoform) - 1)):
+                                    sequence_list = list(isoform)
+                                    if sequence_list[i] == "A":                         
+                                        # We will not edit adenosines that are in the mutant sequence:
+                                        if i in pos_list:
+                                            continue
+                                        new_string = sequence_list
+                                        new_string[i] = "G"
+                                        temp =isoform[:i] + "*" + isoform[i + 1:]
+                                        gRNA = temp[max(pos - NUM_OF_NUC_AROUND_MUT, 0) : min(pos + NUM_OF_NUC_AROUND_MUT + m, len(sequence_list))]
+                                        if i % 3 == 0:
+                                            start_index = max(i - 24, 0)
+                                            end_index = i + 27
+                                        elif i % 3 == 1:
+                                            start_index = max(i - 25, 0)
+                                            end_index = i + 26
+                                        else:
+                                            start_index = max(i - 26, 0)
+                                            end_index = i + 25
+                                        ADAR_mut_seq_list.append(("".join(new_string[start_index : end_index]), gRNA, isoform[start_index : end_index]))
+
+                        if double_editing:
+                            for isoform in mut_isoforms:
+                                gRNA_editing_sites = []
+                                sequence_list = list(isoform)
+                                for i in range(max(pos - NUM_OF_NUC_AROUND_MUT + 1, 1), min(pos + NUM_OF_NUC_AROUND_MUT + m - 1, len(isoform) - 1)):
+                                    if sequence_list[i] == "A":                         
+                                        # We will not edit adenosines that are in the mutant sequence:
+                                        if i in pos_list:
+                                            continue
+                                        gRNA_editing_sites.append(i)
+
+                                unique_pairs = list(combinations(gRNA_editing_sites, 2))
+                                for pair in unique_pairs:
+                                    sequence_list = list(isoform)
+                                    a = pair[1] - pair[0] + pair[0] % 3 + 1  # The distance in nucleotides
+                                    distance = -(-a // 3)  # The distance in amino acids
+                                    if distance <= MER_LENGHT:
+                                        new_string = sequence_list
+                                        new_string[pair[0]] = "G"
+                                        new_string[pair[1]] = "G"
+                                        temp = "".join(new_string)
+                                        x = MER_LENGHT - distance
+                                        groups_of_three = []
+                                        for i in range(0, len(temp), 3):
+                                            group = temp[i:i+3]  
+                                            groups_of_three.append(group)
+                                        first_nuc = pair[0] + 1
+                                        second_nuc = pair[1] + 1
+                                        start_index = max(-(-first_nuc // 3) - 1 - x, 0)
+                                        end_index = -(-second_nuc // 3) + x
+                                        new_string[pair[0]] = "*"
+                                        new_string[pair[1]] = "*"
+                                        temp = "".join(new_string)
+                                        gRNA = temp[max(pos - NUM_OF_NUC_AROUND_MUT, 0) : min(pos + NUM_OF_NUC_AROUND_MUT + m, len(sequence_list))]
+                                        ADAR_mut_seq_list.append(("".join(groups_of_three[start_index : end_index]), gRNA, isoform[start_index*3 : end_index*3]))
+                        
+                        # Remove duplicates from the adar_mut list:
+                        unique_ADAR_mut_list = list(set(ADAR_mut_seq_list))
+
+                        if unique_ADAR_mut_list:
+                            creat_FASTA_file([t[0] for t in unique_ADAR_mut_list], index)
+                            # Running the tool on the edited sequences:
+                            for hla in list_of_HLA:
+                                output = run_MHCpan(hla, index)
+                                create_results_file(sb_wb_tuple, output)
+                
+                    uniq_sb_wb = list(set(sb_wb_tuple))
+
+                    if not uniq_sb_wb:
+                        sequence_list = list(mut_isoforms[0]) 
+                        gRNA_NA = "".join(sequence_list[max(pos - NUM_OF_NUC_AROUND_MUT, 0) : min(pos + NUM_OF_NUC_AROUND_MUT + m, len(sequence_list))])
+                        final_file.write(f"{mutation[1]}\t{mutation[2]}\t{mutation[0]}\t{strand}\t{mutation[3]}\t{'NA'}\t{gRNA_NA}\t{'NA'}\t{'NA'}\t{'NA'}\t{'NA'}\t{edit_option}\n")
+                        continue
+
+                    # Finding the strongest neoantigen that can be produced:
+                    current_best_aso = sorted(uniq_sb_wb, key=lambda x: (x[2],x[4],x[5]))[0]
+                    if single_editing or double_editing:
+                        sb_seq = Seq(unique_ADAR_mut_list[current_best_aso[0]][0])
+                    else:
+                        sb_seq = Seq(NEW_mut_isoforms[current_best_aso[0]])
+
+                    protein = sb_seq.translate()
+                    if "*" in str(protein):
+                        protein = str(protein)
+                        protein = protein.replace("*", "X")
+                        protein = Seq(protein)
+                    pos_p = protein.find(current_best_aso[1])
+                    ASO_target = sb_seq[(pos_p * 3):((pos_p + len(current_best_aso[1])) * 3)]
+                    if single_editing or double_editing:
+                        best_ASO = (unique_ADAR_mut_list[current_best_aso[0]][1], ASO_target, current_best_aso[2], mutation, current_best_aso[3], strand, current_best_aso[4], current_best_aso[5])
+                    else:
+                        best_ASO = (gRNA, ASO_target, current_best_aso[2], mutation, current_best_aso[3], strand, current_best_aso[4], current_best_aso[5])
+                    final_file.write(f"{best_ASO[3][1]}\t{best_ASO[3][2]}\t{best_ASO[3][0]}\t{best_ASO[5]}\t{best_ASO[3][3]}\t{str(best_ASO[1])}\t{str(best_ASO[0])}\t{best_ASO[2]}\t{best_ASO[6]}\t{best_ASO[7]}\t{best_ASO[4]}\t{edit_option}\n")
+
 def main():
     setting_Environment_Variables()
-    for primary_site in os.listdir(f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}"):
-        if not os.path.isdir(os.path.join(f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/", primary_site)) or primary_site == "TPM":
-            continue
-        if not os.path.isdir(f"/home/alu/netlandes/MHCpan/final_results/{primary_site}"):
-            os.mkdir(f"/home/alu/netlandes/MHCpan/final_results/{primary_site}")
-        # delete_previouse_results(primary_site)
+    for primary_site in os.listdir(PROJECT_PATH):
+        if not os.path.isdir(os.path.join(RESULTS_PATH , primary_site)):
+            os.mkdir(os.path.join(RESULTS_PATH , primary_site))
         df = pd.read_csv(f"/private7/projects/Netanel/MHC_TCGA_HLA_types/{primary_site}.tsv",  sep='\t')
-        duplicats_patients = find_duplicate_patients_in_data(primary_site)
-        for file_id in os.listdir(f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/{primary_site}"):
-            list_of_mutation, p_id, num_mutation = creats_list_of_mutation(f"/private7/projects/Netanel/MHC_TCGA_projects/projects{k}/{primary_site}/{file_id}")
-            t = p_id.split('-')[0:3]
-            patient_ID = '-'.join(t)
-
-            if patient_ID in duplicats_patients:
-                res_path = f"/home/alu/netlandes/MHCpan/final_results/{primary_site}/{p_id}.tsv"
-            else:
-                res_path = f"/home/alu/netlandes/MHCpan/final_results/{primary_site}/{patient_ID}.tsv"
-
-            list_HLA = find_HLA(patient_ID, df)
-            list_of_HLA = list(set(list_HLA))
-
-            # If no HLA is found for the current patient, it is skipped:
-            if not list_of_HLA:
-                continue
-
-            with open (res_path, 'w') as final_file:
-                final_file.write("#NEO-ADAR-TIGEN 1.0\n")
-                final_file.write(f"#Patient ID: {patient_ID}\n")
-                final_file.write(f"#File ID: {file_id}\n")
-                final_file.write(f"#Num of mutation: {num_mutation}\n")
-                final_file.write(f"#Num of mutation in CDS: {len(list_of_mutation)}\n")
-                final_file.write("Gene_Name\tTranscript_ID\tMutation\tStrand\tHGVSp_Short\tBest-target\tGuide-RNA\tRank\tAffinity(nM)\tHLA\tEDITS\n")
-
-                if len(list_of_mutation) >= 6000:
-                    final_file.write("TODO\n")
-                    continue
-
-                for mutation in list_of_mutation:
-                    fun_result = preprocessing(mutation)
-                    if fun_result is not None:
-                        mut_isoforms, strand, pos_list, m, pos = fun_result
-                    else:
-                        continue
-                    for edit_option in edits_list:
-                        without_editing, single_editing, double_editing = edit_option_initialization(edit_option)
-
-                        sb_tuple = []
-                        wb_tuple = []
-
-                        if without_editing:
-                            creat_FASTA_file(mut_isoforms, k)
-                            for hla in list_of_HLA:
-                                output = run_MHCpan(hla, k)
-                                create_results_file(sb_tuple, wb_tuple, output) 
-                            sequence_list = list(mut_isoforms[0]) 
-                            gRNA = "".join(sequence_list[max(pos - num_of_nuc_around_mut, 0) : min(pos + num_of_nuc_around_mut + m, len(sequence_list))])
-                        
-                        if single_editing or double_editing:
-                            
-                            # Creating the edit in the mutant sequence:
-                            ADAR_mut_seq_list = []
-
-                            if single_editing:
-                                for isoform in mut_isoforms:
-                                    for i in range(max(pos - num_of_nuc_around_mut + 1, 1), min(pos + num_of_nuc_around_mut + m - 1, len(isoform) - 1)):
-                                        sequence_list = list(isoform)
-                                        if sequence_list[i] == "A":                         
-                                            # We will not edit adenosines that are in the mutant sequence:
-                                            if i in pos_list:
-                                                continue
-                                            new_string = sequence_list
-                                            new_string[i] = "G"
-                                            temp =isoform[:i] + "*" + isoform[i + 1:]
-                                            gRNA = temp[max(pos - num_of_nuc_around_mut, 0) : min(pos + num_of_nuc_around_mut + m, len(sequence_list))]
-                                            if i % 3 == 0:
-                                                start_index = max(i - 24, 0)
-                                                end_index = i + 27
-                                            elif i % 3 == 1:
-                                                start_index = max(i - 25, 0)
-                                                end_index = i + 26
-                                            else:
-                                                start_index = max(i - 26, 0)
-                                                end_index = i + 25
-                                            ADAR_mut_seq_list.append(("".join(new_string[start_index : end_index]), gRNA, isoform[start_index : end_index]))
-
-                            if double_editing:
-                                for isoform in mut_isoforms:
-                                    gRNA_editing_sites = []
-                                    sequence_list = list(isoform)
-                                    for i in range(max(pos - num_of_nuc_around_mut + 1, 1), min(pos + num_of_nuc_around_mut + m - 1, len(isoform) - 1)):
-                                        if sequence_list[i] == "A":                         
-                                            # We will not edit adenosines that are in the mutant sequence:
-                                            if i in pos_list:
-                                                continue
-                                            gRNA_editing_sites.append(i)
-
-                                    unique_pairs = list(combinations(gRNA_editing_sites, 2))
-                                    for pair in unique_pairs:
-                                        sequence_list = list(isoform)
-                                        a = pair[1] - pair[0] + pair[0] % 3 + 1  # The distance in nucleotides
-                                        distance = -(-a // 3)  # The distance in amino acids
-                                        if distance <= mer_lenght:
-                                            new_string = sequence_list
-                                            new_string[pair[0]] = "G"
-                                            new_string[pair[1]] = "G"
-                                            temp = "".join(new_string)
-                                            x = mer_lenght - distance
-                                            groups_of_three = []
-                                            for i in range(0, len(temp), 3):
-                                                group = temp[i:i+3]  
-                                                groups_of_three.append(group)
-                                            first_nuc = pair[0] + 1
-                                            second_nuc = pair[1] + 1
-                                            start_index = max(-(-first_nuc // 3) - 1 - x, 0)
-                                            end_index = -(-second_nuc // 3) + x
-                                            new_string[pair[0]] = "*"
-                                            new_string[pair[1]] = "*"
-                                            temp = "".join(new_string)
-                                            gRNA = temp[max(pos - num_of_nuc_around_mut, 0) : min(pos + num_of_nuc_around_mut + m, len(sequence_list))]
-                                            ADAR_mut_seq_list.append(("".join(groups_of_three[start_index : end_index]), gRNA, isoform[start_index*3 : end_index*3]))
-                            
-                            # Remove duplicates from the adar_mut list:
-                            unique_ADAR_mut_list = list(set(ADAR_mut_seq_list))
-
-                            if unique_ADAR_mut_list:
-                                creat_FASTA_file([t[0] for t in unique_ADAR_mut_list], k)
-                                # Running the tool on the edited sequences:
-                                for hla in list_of_HLA:
-                                    output = run_MHCpan(hla, k)
-                                    create_results_file(sb_tuple, wb_tuple, output)
-                 
-                        uniq_sb = list(set(sb_tuple))
-                        uniq_wb = list(set(wb_tuple))
-
-                        if not uniq_sb and not uniq_wb:
-                            sequence_list = list(mut_isoforms[0]) 
-                            gRNA_NA = "".join(sequence_list[max(pos - num_of_nuc_around_mut, 0) : min(pos + num_of_nuc_around_mut + m, len(sequence_list))])
-                            final_file.write(f"{mutation[1]}\t{mutation[2]}\t{mutation[0]}\t{strand}\t{mutation[3]}\t{'NA'}\t{gRNA_NA}\t{'NA'}\t{'NA'}\t{'NA'}\t{edit_option}\n")
-                            continue
-
-                        # Finding the strongest neoantigen that can be produced:
-                        current_best_aso = sorted(uniq_sb + uniq_wb, key=lambda x: x[2])[0]
-                        if single_editing or double_editing:
-                            sb_seq = Seq(unique_ADAR_mut_list[current_best_aso[0]][0])
-                        else:
-                            sb_seq = Seq(mut_isoforms[current_best_aso[0]])
-
-                        protein = sb_seq.translate()
-                        if "*" in str(protein):
-                            protein = str(protein)
-                            protein = protein.replace("*", "X")
-                            protein = Seq(protein)
-                        pos_p = protein.find(current_best_aso[1])
-                        ASO_target = sb_seq[(pos_p * 3):((pos_p + len(current_best_aso[1])) * 3)]
-                        if single_editing or double_editing:
-                            best_ASO = (unique_ADAR_mut_list[current_best_aso[0]][1], ASO_target, current_best_aso[2], mutation, current_best_aso[3], strand, current_best_aso[4])
-                        else:
-                            best_ASO = (gRNA, ASO_target, current_best_aso[2], mutation, current_best_aso[3], strand, current_best_aso[4])
-                        final_file.write(f"{best_ASO[3][1]}\t{best_ASO[3][2]}\t{best_ASO[3][0]}\t{best_ASO[5]}\t{best_ASO[3][3]}\t{str(best_ASO[1])}\t{str(best_ASO[0])}\t{best_ASO[2]}\t{best_ASO[6]}\t{best_ASO[4]}\t{edit_option}\n")
-        
-        adding_TPM(primary_site, duplicats_patients)
-
+        duplicats_patients, pat_dic = find_duplicate_patients_in_data(primary_site, PROJECT_PATH)
+        patients_files = os.listdir(os.path.join(PROJECT_PATH , primary_site))
+        parellel_function(patients_files, PROJECT_PATH, primary_site, duplicats_patients, df, pat_dic)
+        adding_TPM(primary_site, duplicats_patients, PROJECT_PATH)
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -548,23 +563,3 @@ if __name__ == "__main__":
     # options = parser.parse_args()
 
 
-
-
-
-            # with open (res_path, 'r+') as final_file:                
-                # # Move the file pointer to the end of the file
-                # final_file.seek(0, os.SEEK_END)
-                
-                # # Get the position of the last non-empty line
-                # pos = final_file.tell()
-                # while pos > 0:
-                #     pos -= 1
-                #     final_file.seek(pos, os.SEEK_SET)
-                #     if final_file.read(1) == '\n':
-                #         break
-
-                # # Save the position to start appending new data
-                # start_pos = pos + 1
-
-                # # Write the new data
-                # final_file.seek(start_pos, os.SEEK_SET)
