@@ -1,8 +1,4 @@
 #!/bin/bash
-# path to the genome reference:
-# gzip -d hg38_genome.gz
-# awk '$3 == "CDS"' "/home/alu/netlandes/MHCpan/hg38_genome" > hg38_genome_only_cds.gtf
-# awk -F'\t' -v OFS="\t" '{print $1,$4,$5,$9,$7,$8}' "/home/alu/netlandes/MHCpan/hg38_genome_only_cds" > bed6_of_genom_38.bed
 genome="/home/alu/netlandes/MHCpan/bed6_of_ensemble.bed"
 chr="$1"
 mut_position="$2"

@@ -1,3 +1,8 @@
+import argparse
+import inspect
+import logging
+from datetime import datetime
+from pprint import pformat
 import subprocess
 import pandas as pd
 import re
@@ -8,13 +13,13 @@ from itertools import combinations
 import csv
 
 # Global variables:
-PROJECT_PATH = "testdata"
-RESULTS_PATH = "results"
-TEMP_PATH =  "sup"
-EDITS_LIST = [0,1,2]
 MER_LENGHT = 9
 NUM_OF_NUC_AROUND_MUT = 20
 SIZE_OF_SEQ = 2*NUM_OF_NUC_AROUND_MUT + 2*26 + 1
+
+RUN_PARAMS_DEBUG_MSG = "Running with Resource Files and Run Paths: %s"
+LOG_DIR = os.path.join("%(out_dir)s", "OppositelyOrientedRepeatsLogs",
+                       "%(suffix)sFindOppositelyOrientedRepeats_%(time)s.log")
 
 
 def setting_Environment_Variables():
@@ -22,7 +27,7 @@ def setting_Environment_Variables():
     This method configures the environment variables to enable the subsequent execution of netMHCpan4.1.
     """
     os.environ["PLATFORM"] = "Linux_x86_64"
-    os.environ["NMHOME"] = "/private7/projects/Netanel/netMHCpan-4.1"
+    os.environ["NMHOME"] = "netMHCpan-4.1"
     os.environ["NETMHCpan"] = os.environ["NMHOME"] + "/" + os.environ["PLATFORM"]
     os.environ["NetMHCpanWWWPATH"] = "/services/NetMHCpan/tmp/"
     os.environ["NetMHCpanWWWDIR"] = "/usr/opt/www/pub/CBS/services/NetMHCpan/tmp"
@@ -41,8 +46,8 @@ def find_duplicate_patients_in_data(primary_site, project_path):
     """
 
     all_patient = {}
-    for file_id in os.listdir(project_path + f"/{primary_site}"):
-        mut_path = project_path + f"/{primary_site}/{file_id}"
+    for file_id in [file for file in os.listdir(os.path.join(project_path , primary_site)) if os.path.isdir(file)]:
+        mut_path = os.listdir(os.path.join(project_path , primary_site, file_id))
         gz_file_path = None
         for file_name in os.listdir(mut_path):
             if file_name.endswith('.gz'):
@@ -62,7 +67,7 @@ def find_duplicate_patients_in_data(primary_site, project_path):
                     break
     new_dic = {}
     dup_pat = [key for key, value in all_patient.items() if len(value) >= 2]
-    with open(project_path + '/UUIDtoCASE.tsv', 'r') as tsvfile:
+    with open(os.path.join(project_path , primary_site, 'UUIDtoCASE.tsv'), 'r') as tsvfile:
         reader = csv.reader(tsvfile, delimiter='\t')
         data = [row[0] for row in reader]
 
@@ -90,13 +95,13 @@ def checking_input(mutation_input):
         return None
     return re.search(pattern, mutation_input)
 
-def creat_FASTA_file(list_of_seq, k):
-    with open(os.path.join(TEMP_PATH,"TEMP", f"input_seq{k}.fsa"), "w") as fasta_file:
+def creat_FASTA_file(temp_path, list_of_seq, k):
+    with open(os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa"), "w") as fasta_file:
         for i, sequence in enumerate(list_of_seq):
             fasta_file.write(f">{i}\n{str(Seq(sequence).translate())}\n")
 
-def run_MHCpan(patient_HLA, k):
-    output = subprocess.run(f'"/private7/projects/Netanel/netMHCpan-4.1/Linux_x86_64/bin/netMHCpan" -f {os.path.join(TEMP_PATH,"TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
+def run_MHCpan(temp_path, patient_HLA, k):
+    output = subprocess.run(f'{os.path.join("netMHCpan-4.1","Linux_x86_64", "bin", "netMHCpan")} -f {os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
     return output.stdout
 
 def create_results_file(tuples_of_SB_WB, output):
@@ -175,7 +180,7 @@ def preprocessing(mutation, k):
     mut_seq = match.group(4)
 
     # Run a program that accepts as input a chromosome and location and returns the bases around it:
-    p = subprocess.run(f'sh {os.path.join("src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k}', capture_output=True,text=True, shell=True)
+    p = subprocess.run(f'sh {os.path.join(os.getcwd(),"src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k}', capture_output=True,text=True, shell=True)
     seq = p.stdout.replace("\n", "") 
 
     # We will run a program that will return the reading frame of the sequence:
@@ -275,7 +280,7 @@ def preprocessing(mutation, k):
     return mut_isoforms, strand, pos_list, m, pos
         
 def adding_TPM(primary_site, duplicats_patients, project_path):
-    with open(project_path + '/UUIDtoCASE.tsv', 'r') as tsvfile:
+    with open(os.path.join(project_path , primary_site, 'UUIDtoCASE.tsv'), 'r') as tsvfile:
         reader = csv.reader(tsvfile, delimiter='\t')
         data = [(row[1], row[2], row[0]) for row in reader]
 
@@ -334,21 +339,18 @@ def edit_option_initialization(edit_option):
     else:
         return False, False, True
 
-def parellel_function(patiens_files,project_path, primary_site, duplicats_patients, df, pat_dic):
+def parellel_function(patiens_files, args, primary_site, duplicats_patients, df, pat_dic):
     for index, file_id in enumerate(patiens_files):
-        list_of_mutation, p_id, num_mutation = creats_list_of_mutation(os.path.join(project_path , primary_site, file_id))
+        list_of_mutation, p_id, num_mutation = creats_list_of_mutation(os.path.join(args.project_dir , primary_site, file_id))
         t = p_id.split('-')[0:3]
         patient_ID = '-'.join(t)
-
+        
         if patient_ID in duplicats_patients:
             if patient_ID not in pat_dic or p_id != pat_dic[patient_ID]:
                 continue
-            res_path = os.path.join(RESULTS_PATH, primary_site, p_id)
+            res_path = os.path.join(args.results_dir, primary_site, p_id)
         else:
-            res_path = os.path.join(RESULTS_PATH, primary_site, patient_ID)
-
-        if len(list_of_mutation) >= 8000:
-            continue
+            res_path = os.path.join(args.results_dir, primary_site, patient_ID)
 
         list_HLA = find_HLA(patient_ID, df)
         list_of_HLA = list(set(list_HLA))
@@ -371,7 +373,7 @@ def parellel_function(patiens_files,project_path, primary_site, duplicats_patien
                     mut_isoforms, strand, pos_list, m, pos = fun_result
                 else:
                     continue
-                for edit_option in EDITS_LIST:
+                for edit_option in args.num_editing:
                     without_editing, single_editing, double_editing = edit_option_initialization(edit_option)
 
                     sb_wb_tuple = []
@@ -406,9 +408,9 @@ def parellel_function(patiens_files,project_path, primary_site, duplicats_patien
                                     end_index = mut_end_index + 25
                             NEW_mut_isoforms.append("".join(mut_isoform[start_index : end_index]))
 
-                        creat_FASTA_file(NEW_mut_isoforms, index)
+                        creat_FASTA_file(args.sup_dir, NEW_mut_isoforms, index)
                         for hla in list_of_HLA:
-                            output = run_MHCpan(hla, index)
+                            output = run_MHCpan(args.sup_dir, hla, index)
                             create_results_file(sb_wb_tuple, output) 
                         sequence_list = list(mut_isoforms[0]) 
                         gRNA = "".join(sequence_list[max(pos - NUM_OF_NUC_AROUND_MUT, 0) : min(pos + NUM_OF_NUC_AROUND_MUT + m, len(sequence_list))])
@@ -480,10 +482,10 @@ def parellel_function(patiens_files,project_path, primary_site, duplicats_patien
                         unique_ADAR_mut_list = list(set(ADAR_mut_seq_list))
 
                         if unique_ADAR_mut_list:
-                            creat_FASTA_file([t[0] for t in unique_ADAR_mut_list], index)
+                            creat_FASTA_file(args.sup_dir, [t[0] for t in unique_ADAR_mut_list], index)
                             # Running the tool on the edited sequences:
                             for hla in list_of_HLA:
-                                output = run_MHCpan(hla, index)
+                                output = run_MHCpan(args.sup_dir, hla, index)
                                 create_results_file(sb_wb_tuple, output)
                 
                     uniq_sb_wb = list(set(sb_wb_tuple))
@@ -514,52 +516,60 @@ def parellel_function(patiens_files,project_path, primary_site, duplicats_patien
                         best_ASO = (gRNA, ASO_target, current_best_aso[2], mutation, current_best_aso[3], strand, current_best_aso[4], current_best_aso[5])
                     final_file.write(f"{best_ASO[3][1]}\t{best_ASO[3][2]}\t{best_ASO[3][0]}\t{best_ASO[5]}\t{best_ASO[3][3]}\t{str(best_ASO[1])}\t{str(best_ASO[0])}\t{best_ASO[2]}\t{best_ASO[6]}\t{best_ASO[7]}\t{best_ASO[4]}\t{edit_option}\n")
 
-def main():
+def init_logging_dict(log_file):
+    if not os.path.isdir(os.path.dirname(log_file)):
+        os.makedirs(os.path.dirname(log_file))
+    logging.basicConfig(level=logging.DEBUG,
+                        format='[%(asctime)s] %(processName)s %(module)s %(levelname)-8s %(message)s',
+                        datefmt='%y-%m-%d %H:%M:%S',
+                        filename=log_file,
+                        filemode='w')
+    # define a Handler which writes WARN messages or higher to the sys.stderr
+    console_logger = logging.StreamHandler()
+    console_logger.setLevel(logging.WARN)
+    # set a format which is simpler for console_logger use
+    formatter = logging.Formatter('[%(asctime)s] %(module)s %(levelname)-8s %(message)s')
+    # tell the handler to use this format
+    console_logger.setFormatter(formatter)
+    # add the handler to the root logger
+    logging.getLogger('').addHandler(console_logger)
+
+def main(args):
+    project_dir = args.project_dir
+    results_dir = args.results_dir
     setting_Environment_Variables()
-    for primary_site in os.listdir(PROJECT_PATH):
-        if not os.path.isdir(os.path.join(RESULTS_PATH , primary_site)):
-            os.mkdir(os.path.join(RESULTS_PATH , primary_site))
-        df = pd.read_csv(f"/private7/projects/Netanel/MHC_TCGA_HLA_types/{primary_site}.tsv",  sep='\t')
-        duplicats_patients, pat_dic = find_duplicate_patients_in_data(primary_site, PROJECT_PATH)
-        patients_files = os.listdir(os.path.join(PROJECT_PATH , primary_site))
-        parellel_function(patients_files, PROJECT_PATH, primary_site, duplicats_patients, df, pat_dic)
-        adding_TPM(primary_site, duplicats_patients, PROJECT_PATH)
+    # init_logging_dict(args.log_path if args.log_path else LOG_DIR % {'out_dir': results_dir,
+    #                                                                 #    'suffix': args.output_files_prefix,     TODO
+    #                                                                    'time': datetime.today().isoformat()})
+    # args, _, _, values = inspect.getargvalues(inspect.currentframe())
+    # logging.debug(RUN_PARAMS_DEBUG_MSG % pformat(dict([(i, values[i]) for i in args])))
+
+    for primary_site in os.listdir(project_dir):
+        if not os.path.isdir(os.path.join(results_dir , primary_site)):
+            os.mkdir(os.path.join(results_dir , primary_site))
+        df = pd.read_csv(os.path.join(args.sup_dir , "HLA", f"{primary_site}.tsv") ,  sep='\t')
+        duplicats_patients, pat_dic = find_duplicate_patients_in_data(primary_site, project_dir)
+        patients_files = [file for file in os.listdir(os.path.join(project_dir, primary_site)) 
+               if os.path.isdir(os.path.join(project_dir, primary_site, file))]
+        parellel_function(patients_files, args, primary_site, duplicats_patients, df, pat_dic)
+        # adding_TPM(primary_site, duplicats_patients, project_dir)
 
 if __name__ == "__main__":
-    main()
+    # Create parser
+    class MyFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
+        pass
 
+    parser = argparse.ArgumentParser(formatter_class=MyFormatter,
+                                     description='A tool for creating a neo-antigen by RNA editing')
+    parser.add_argument('-i', '--project_dir', dest='project_dir', action='store', metavar='root_dir',
+                        nargs='?', default=os.path.join(os.getcwd(), "testdata"), help='A folder containing the projects on which the tool will run')
+    parser.add_argument('-o', '--results_dir', dest='results_dir', action='store', metavar='output_file', nargs='?',
+                        default=os.path.join(os.getcwd(), "results"), help='The folder that will contain the result files')
+    parser.add_argument('-l', '--log_path', dest='log_path', action='store', metavar='log_path', nargs='?',
+                        default=None, help='Log file, default is to create in input dir')
+    parser.add_argument('-n','--num_editing', dest='num_editing', choices= [0, 1, 2] , nargs='+',
+                        default=[0,1,2], help='How many edits the tool will perform on each peptide sequence')
+    parser.add_argument('-t','--sup_dir', dest='sup_dir', action='store' , metavar='sup_dir', nargs='?',
+                        default=os.path.join(os.getcwd(), "sup"), help='A folder containing completions for the tool code')
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-# NumEditingOptionsDict = {"All":[0,1,2], "NoEditing":[0], "SingleEditing":[1],"DoubleEditing":[2]}
-
-    # # Create parser
-    # class MyFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
-    #     pass
-
-    # parser = argparse.ArgumentParser(formatter_class=MyFormatter,
-    #                                  description='TODO')
-    
-    # parser.add_argument('-i', '--site_dir', dest='site_dir', action='store', metavar='root_dir',
-    #                     nargs='?', default="/home/alu/netlandes/MHCpan/projects2", help='The input directory')
-    # parser.add_argument('-o', '--output_dir', dest='output_dir', action='store', metavar='output_file', nargs='?',
-    #                     default="/home/alu/netlandes/MHCpan/final_results", help='Output dir')
-    # parser.add_argument('-l', '--log_path', dest='log_path', action='store', metavar='log_path', nargs='?',
-    #                     default=None, help='Log file, default is to create in input dir')
-    # parser.add_argument('--num_editing', dest='num_editing', choices=[key for key in NumEditingOptionsDict], nargs='+',
-    #                     default=NumEditingOptionsDict['All'], help='TODO')
-
-    # options = parser.parse_args()
-
-
+    main(parser.parse_args())

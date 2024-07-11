@@ -1,0 +1,31 @@
+# /private7/projects/Netanel/netMHCpan-4.1/Linux_x86_64/bin/netMHCpan test.pep
+# Wed May  1 15:40:27 2024
+# User: netlandes
+# PWD : /private7/projects/Netanel/netMHCpan-4.1/test
+# Host: Linux alu14 5.14.0-362.24.1.el9_3.x86_64 x86_64
+# Command line parameters set to:
+#	[-rdir filename]     $NETMHCpan           Home directory for NetMHpan
+#	[-syn filename]      $NETMHCpan/data/synlist.bin Synaps file
+#	[-v]                 0                    Verbose mode
+#	[-dirty]             0                    Dirty mode, leave tmp dir+files
+#	[-tdir filename]     $TMPDIR/netMHCpanXXXXXX Temporary directory (made with mkdtemp)
+#	[-hlapseudo filename] $NETMHCpan/data/MHC_pseudo.dat File with MHC pseudo sequences
+#	[-hlaseq filename]                        File with full length MHC sequences
+#	[-a line]            HLA-A02:01           MHC allele
+#	[-f filename]                             File name with input
+#	[-w]                 0                    w option for webface
+#	[-s]                 0                    Sort output on descending affinity
+#	[-p]                 0                    Use peptide input
+#	[-rth float]         0.500000             Rank Threshold for high binding peptides
+#	[-rlt float]         2.000000             Rank Threshold for low binding peptides
+#	[-l string]          8,9,10,11            Peptide length [8-11] (multiple length with ,)
+#	[-xls]               0                    Save output to xls file
+#	[-xlsfile filename]  NetMHCpan_out.xls    Filename for xls dump
+#	[-t float]           -99.900002           Threshold for output (%rank) [<0 print all]
+#	[-thrfmt filename]   $NETMHCpan/data/threshold/%s.thr.%s Format for threshold filenames
+#	[-expfix]            0                    Exclude prefix from synlist
+#	[-version filename]  $NETMHCpan/data/version File with version information
+#	[-inptype int]       0                    Input type [0] FASTA [1] Peptide
+#	[-listMHC]           0                    Print list of alleles included in netMHCpan
+#	[-allname filename]  $NETMHCpan/data/allelenames File with print names for alleles
+#	[-BA]                0                    Include Binding affinity prediction
