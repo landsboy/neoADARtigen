@@ -1,0 +1,11 @@
+name: neoADARtigen
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies: 
+  - biopython 
+  - python >= 3.9.6
+  - pandas >= 1.2.5
+  - bedtools >= 2.30.0
