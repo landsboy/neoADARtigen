@@ -21,4 +21,7 @@ git clone https://github.com/landsboy/neo-ADARtigen.git
 conda env create -f neoADARtigen.yml
 conda activate neoADARtigen  # test successful creation
 ```
-3. 
+3. Run the following file with the following arguments
+```
+python tcga_patients.py -p <path/to/yours/netMHCpan4.1> -f <path/to/yours/hg38.fa>
+```
