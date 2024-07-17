@@ -1,4 +1,4 @@
-# neo-ADARtigen
+# neoADARtigen
 A tool for creating a neo-antigen by RNA editing.
 
 An accompanying repo to the paper:
