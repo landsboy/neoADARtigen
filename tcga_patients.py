@@ -16,6 +16,8 @@ import csv
 MER_LENGHT = 9
 NUM_OF_NUC_AROUND_MUT = 20
 SIZE_OF_SEQ = 2*NUM_OF_NUC_AROUND_MUT + 2*26 + 1
+FASTA_PATH = None
+NETMHCPAN_PATH = None
 
 RUN_PARAMS_DEBUG_MSG = "Running with Resource Files and Run Paths: %s"
 LOG_DIR = os.path.join("%(out_dir)s", "OppositelyOrientedRepeatsLogs",
@@ -26,7 +28,7 @@ def setting_Environment_Variables():
     This method configures the environment variables to enable the subsequent execution of netMHCpan4.1.
     """
     os.environ["PLATFORM"] = "Linux_x86_64"
-    os.environ["NMHOME"] = os.path.join(os.getcwd() ,"netMHCpan-4.1")
+    os.environ["NMHOME"] = NETMHCPAN_PATH
     os.environ["NETMHCpan"] = os.path.join(os.environ["NMHOME"], os.environ["PLATFORM"])
     os.environ["NetMHCpanWWWPATH"] = "/services/NetMHCpan/tmp/"
     os.environ["NetMHCpanWWWDIR"] = "/usr/opt/www/pub/CBS/services/NetMHCpan/tmp"
@@ -100,7 +102,7 @@ def creat_FASTA_file(temp_path, list_of_seq, k):
             fasta_file.write(f">{i}\n{str(Seq(sequence).translate())}\n")
 
 def run_MHCpan(temp_path, patient_HLA, k):
-    output = subprocess.run(f'{os.path.join(os.getcwd(), "netMHCpan-4.1","Linux_x86_64", "bin", "netMHCpan")} -f {os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
+    output = subprocess.run(f'{os.path.join(NETMHCPAN_PATH,"Linux_x86_64", "bin", "netMHCpan")} -f {os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
     return output.stdout
 
 def create_results_file(tuples_of_SB_WB, output):
@@ -179,7 +181,7 @@ def preprocessing(mutation, k):
     mut_seq = match.group(4)
 
     # Run a program that accepts as input a chromosome and location and returns the bases around it:
-    p = subprocess.run(f'sh {os.path.join(os.getcwd(),"src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k} {os.path.join(os.getcwd(),"sup", "hg38.fa")}', capture_output=True,text=True, shell=True)
+    p = subprocess.run(f'sh {os.path.join(os.getcwd(),"src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k} {FASTA_PATH}', capture_output=True,text=True, shell=True)
     seq = p.stdout.replace("\n", "") 
 
     # We will run a program that will return the reading frame of the sequence:
@@ -569,5 +571,12 @@ if __name__ == "__main__":
                         default=[0,1,2], help='How many edits the tool will perform on each peptide sequence')
     parser.add_argument('-t','--sup_dir', dest='sup_dir', action='store' , metavar='sup_dir', nargs='?',
                         default=os.path.join(os.getcwd(), "sup"), help='A folder containing completions for the tool code')
+    parser.add_argument('-p','--netmhc_path', dest='netmhc_path', action='store' , metavar='netmhc_path', required=True,
+                        help='The path to the netMHCpan4.1 tool that needs to be downloaded locally')
+    parser.add_argument('-f','--hg38_fa', dest='hg38_fa', action='store' , metavar='hg38_fa', required=True,
+                         help='The path to the hg38 genom reference that needs to be downloaded locally')
+    
+    FASTA_PATH = parser.parse_args().hg38_fa
+    NETMHCPAN_PATH = parser.parse_args().netmhc_path
 
     main(parser.parse_args())
