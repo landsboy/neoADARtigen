@@ -9,3 +9,16 @@ An accompanying repo to the paper:
 If you need help of any kind, feel free to open a new issue.
 
 # Setup
+Requires locally installed version of [NetMHCpan4.1](https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=netMHCpan&version=4.1&packageversion=4.1b&platform=Linux)
+ 
+1. Clone the repository
+```
+git clone https://github.com/landsboy/neo-ADARtigen.git
+```
+
+2. Create conda environment
+```
+conda env create -f neoADARtigen.yml
+conda activate neoADARtigen  # test successful creation
+```
+3. 
