@@ -1,6 +1,0 @@
-#NEO-ADAR-TIGEN 1.0
-#Patient ID: TCGA-EB-A5VV
-#File ID: 0d76db6d-e8c0-496d-be7f-edcedf4ac6af
-#Num of mutation: 624
-#Num of mutation in CDS: 7
-Gene_Name	Transcript_ID	Mutation	Strand	HGVSp_Short	Best-target	Guide-RNA	Rank(%)	Affinity(nM)	Rank_BA(%)	HLA	EDITS

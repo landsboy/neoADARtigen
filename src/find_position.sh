@@ -1,8 +1,8 @@
 #!/bin/bash
-genome="/home/alu/netlandes/MHCpan/bed6_of_ensemble.bed"
 chr="$1"
 mut_position="$2"
 k="$3"
+genome="$4"
 start_seq=$((mut_position-15))
 end_seq=$((mut_position+15))
 # path to create temp file of BED format for query

@@ -1,11 +1,10 @@
 #!/bin/bash
-# path to the genome reference:
-genome="/private/dropbox/Genomes/Human/hg38/hg38.fa"
 chr="$1"
 mut_position="$2"
 start_seq=$((mut_position-$3))
 end_seq=$((mut_position+$3))
 k="$4"
+genome="$5"
 # path to create temp file of BED format for query
 out_temp="sup/TEMP/TEMP${k}.bed"
 # create the temp file with the BED entry

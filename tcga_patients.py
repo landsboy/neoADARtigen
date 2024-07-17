@@ -21,14 +21,13 @@ RUN_PARAMS_DEBUG_MSG = "Running with Resource Files and Run Paths: %s"
 LOG_DIR = os.path.join("%(out_dir)s", "OppositelyOrientedRepeatsLogs",
                        "%(suffix)sFindOppositelyOrientedRepeats_%(time)s.log")
 
-
 def setting_Environment_Variables():
     """
     This method configures the environment variables to enable the subsequent execution of netMHCpan4.1.
     """
     os.environ["PLATFORM"] = "Linux_x86_64"
-    os.environ["NMHOME"] = "netMHCpan-4.1"
-    os.environ["NETMHCpan"] = os.environ["NMHOME"] + "/" + os.environ["PLATFORM"]
+    os.environ["NMHOME"] = os.path.join(os.getcwd() ,"netMHCpan-4.1")
+    os.environ["NETMHCpan"] = os.path.join(os.environ["NMHOME"], os.environ["PLATFORM"])
     os.environ["NetMHCpanWWWPATH"] = "/services/NetMHCpan/tmp/"
     os.environ["NetMHCpanWWWDIR"] = "/usr/opt/www/pub/CBS/services/NetMHCpan/tmp"
     os.environ["TMPDIR"] = "/tmp"
@@ -101,7 +100,7 @@ def creat_FASTA_file(temp_path, list_of_seq, k):
             fasta_file.write(f">{i}\n{str(Seq(sequence).translate())}\n")
 
 def run_MHCpan(temp_path, patient_HLA, k):
-    output = subprocess.run(f'{os.path.join("netMHCpan-4.1","Linux_x86_64", "bin", "netMHCpan")} -f {os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
+    output = subprocess.run(f'{os.path.join(os.getcwd(), "netMHCpan-4.1","Linux_x86_64", "bin", "netMHCpan")} -f {os.path.join(temp_path, "TEMP", f"input_seq{k}.fsa")} -a {patient_HLA} -l {MER_LENGHT} -BA -t 2.1', shell=True, capture_output=True, text=True)
     return output.stdout
 
 def create_results_file(tuples_of_SB_WB, output):
@@ -180,11 +179,11 @@ def preprocessing(mutation, k):
     mut_seq = match.group(4)
 
     # Run a program that accepts as input a chromosome and location and returns the bases around it:
-    p = subprocess.run(f'sh {os.path.join(os.getcwd(),"src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k}', capture_output=True,text=True, shell=True)
+    p = subprocess.run(f'sh {os.path.join(os.getcwd(),"src", "find_seq_of_mutation.sh")} {mut_chr} {mut_pos} {int(SIZE_OF_SEQ / 2)} {k} {os.path.join(os.getcwd(),"sup", "hg38.fa")}', capture_output=True,text=True, shell=True)
     seq = p.stdout.replace("\n", "") 
 
     # We will run a program that will return the reading frame of the sequence:
-    q = subprocess.run(f'sh {os.path.join("src", "find_position.sh")} {mut_chr} {mut_pos} {k}', shell=True, capture_output=True,text=True)
+    q = subprocess.run(f'sh {os.path.join("src", "find_position.sh")} {mut_chr} {mut_pos} {k} {os.path.join(os.getcwd(),"sup", "bed6_of_ensemble.bed")}', shell=True, capture_output=True,text=True)
     res_list = [res for res in q.stdout.split("\n") if res]
 
     if not res_list:
@@ -279,16 +278,16 @@ def preprocessing(mutation, k):
 
     return mut_isoforms, strand, pos_list, m, pos
         
-def adding_TPM(primary_site, duplicats_patients, project_path):
+def adding_TPM(primary_site, duplicats_patients, project_path, res_path):
     with open(os.path.join(project_path , primary_site, 'UUIDtoCASE.tsv'), 'r') as tsvfile:
         reader = csv.reader(tsvfile, delimiter='\t')
         data = [(row[1], row[2], row[0]) for row in reader]
 
-    if not os.path.isdir(f"/home/alu/netlandes/MHCpan/final_results/final_{primary_site}"):
-            os.mkdir(f"/home/alu/netlandes/MHCpan/final_results/final_{primary_site}")
+    if not os.path.isdir(os.path.join(res_path ,f"final_{primary_site}")):
+            os.mkdir(os.path.join(res_path ,f"final_{primary_site}"))
 
 
-    for filename in os.listdir(f"/home/alu/netlandes/MHCpan/final_results/{primary_site}"):
+    for filename in os.listdir(os.path.join(res_path ,primary_site)):
         mapping = {}
         if filename.split(".")[0].count("-") > 3:
             parts = (filename.split(".")[0]).split("-")
@@ -299,7 +298,7 @@ def adding_TPM(primary_site, duplicats_patients, project_path):
             temp = filename.split(".")[0]
         for item in data:
             if (patient_id not in duplicats_patients and item[0] == patient_id) or (temp in duplicats_patients and item[2] == patient_id):
-                folder_path = project_path + f"/TPM/{item[1]}/"
+                folder_path = os.path.join(project_path , f"/TPM/{item[1]}/")
                 if not os.path.exists(folder_path):
                     break
                 files_in_folder = os.listdir(folder_path)
@@ -311,9 +310,8 @@ def adding_TPM(primary_site, duplicats_patients, project_path):
                             key = columns[6]  
                             value = columns[1]  
                             mapping[value] = key
-
-                with open(f"/home/alu/netlandes/MHCpan/final_results/{primary_site}/" + filename , 'r') as patient_file:
-                    with open(f"/home/alu/netlandes/MHCpan/final_results/final_{primary_site}/" + filename, 'w') as new_patient_file:
+                with open(os.path.join(res_path ,primary_site, filename), 'r') as patient_file:
+                    with open(os.path.join(res_path ,f"final_{primary_site}", filename), 'w') as new_patient_file:
                         for i, line in enumerate(patient_file):
                             if i >= 6:
                                 gene = line.strip().split('\t')[0]
@@ -348,9 +346,9 @@ def parellel_function(patiens_files, args, primary_site, duplicats_patients, df,
         if patient_ID in duplicats_patients:
             if patient_ID not in pat_dic or p_id != pat_dic[patient_ID]:
                 continue
-            res_path = os.path.join(args.results_dir, primary_site, p_id)
+            res_path = os.path.join(args.results_dir, primary_site, f"{p_id}.tsv")
         else:
-            res_path = os.path.join(args.results_dir, primary_site, patient_ID)
+            res_path = os.path.join(args.results_dir, primary_site, f"{patient_ID}.tsv")
 
         list_HLA = find_HLA(patient_ID, df)
         list_of_HLA = list(set(list_HLA))
@@ -552,7 +550,7 @@ def main(args):
         patients_files = [file for file in os.listdir(os.path.join(project_dir, primary_site)) 
                if os.path.isdir(os.path.join(project_dir, primary_site, file))]
         parellel_function(patients_files, args, primary_site, duplicats_patients, df, pat_dic)
-        # adding_TPM(primary_site, duplicats_patients, project_dir)
+        adding_TPM(primary_site, duplicats_patients, project_dir, results_dir)
 
 if __name__ == "__main__":
     # Create parser

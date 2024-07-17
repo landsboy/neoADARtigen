@@ -1,6 +1,0 @@
-#NEO-ADAR-TIGEN 1.0
-#Patient ID: TCGA-32-1980
-#File ID: defef066-d4e4-4de7-b46f-ef96e6ec3b2d
-#Num of mutation: 171
-#Num of mutation in CDS: 26
-Gene_Name	Transcript_ID	Mutation	Strand	HGVSp_Short	Best-target	Guide-RNA	Rank(%)	Affinity(nM)	Rank_BA(%)	HLA	EDITS

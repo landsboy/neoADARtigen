@@ -3,6 +3,7 @@ name: neoADARtigen
 channels:
   - conda-forge
   - defaults
+  - bioconda
 
 dependencies: 
   - biopython 
