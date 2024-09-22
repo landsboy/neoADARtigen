@@ -10,6 +10,8 @@ If you need help of any kind, feel free to open a new issue.
 
 # Setup
 Requires locally installed version of [NetMHCpan4.1](https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=netMHCpan&version=4.1&packageversion=4.1b&platform=Linux)
+
+And requires a local download of the [human genome v.38](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/)
  
 1. Clone the repository
 ```
