@@ -1,6 +1,8 @@
 # neoADARtigen
 A tool for creating a neo-antigen by RNA editing.
 
+This demo version of the tool in fact ran on three specific projects in TCGA (BRCA, GBN, SCKM), if you want to run on other projects you must download them from [TCGA](https://portal.gdc.cancer.gov/analysis_page?app=Downloads) and put them in the testdata folder.
+
 An accompanying repo to the paper:
 
 ****NAME OF THE ARTICLE****
