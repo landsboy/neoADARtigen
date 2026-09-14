@@ -18,7 +18,7 @@ This demo version of the tool in fact ran on three specific projects in TCGA (BR
 
 An accompanying repo to the paper:
 
-****Employing RNA editing to engineer personalized tumor-specific neoantigens (editopes)****
+****[Engineering editopes through programmable RNA editing toward tumor neoantigen generation](https://link.springer.com/article/10.1038/s44318-026-00870-5)****
 
 # Overview
 The pipeline performs the following steps:
